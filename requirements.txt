@@ -2,3 +2,7 @@ customtkinter>=5.2.0
 Pillow>=10.0.0
 opencv-python>=4.8.0
 numpy>=1.24.0
+
+# --- Note for Raspberry Pi OS ---
+# picamera2 は apt 経由でインストールするため pip には含めません。
+# 実行コマンド: sudo apt install python3-picamera2

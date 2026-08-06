@@ -1,6 +1,8 @@
 # pages/camera_page.py
 import customtkinter as ctk
 from PIL import ImageTk
+from PIL import Image
+import cv2
 from components import PageFrame
 from camera_manager import CameraManager
 
@@ -41,15 +43,26 @@ class CameraPage(PageFrame):
         if not self.is_streaming:
             return
 
-        # フレーム取得 (Pillow Image)
-        pil_image = self.camera_mgr.get_frame(self.video_width, self.video_height)
-        
-        # CTkImage 化してラベルを更新
-        ctk_img = ctk.CTkImage(light_image=pil_image, dark_image=pil_image, size=(self.video_width, self.video_height))
-        self.video_label.configure(image=ctk_img, text="")
-        
-        # 参照保持（ガベージコレクション防止）
-        self.video_label.image = ctk_img
+        # 1. get_frame() の戻り値 (ret, frame) を分解して受ける
+        ret, frame = self.camera_mgr.get_frame()
+
+        if ret and frame is not None:
+            # 2. OpenCVのBGR形式からPillow用のRGB形式に変換
+            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            
+            # 3. NumPy配列から PIL.Image オブジェクトを作成
+            pil_image = Image.fromarray(rgb_frame)
+
+            # 4. CTkImage 化してラベルを更新
+            ctk_img = ctk.CTkImage(
+                light_image=pil_image, 
+                dark_image=pil_image, 
+                size=(self.video_width, self.video_height)
+            )
+            self.video_label.configure(image=ctk_img, text="")
+            
+            # 参照保持（GCによる画像消去防止）
+            self.video_label.image = ctk_img
 
         # 約30fps (33ミリ秒周期) で再帰実行
         self.after_id = self.after(33, self.update_feed)

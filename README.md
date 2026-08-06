@@ -2,6 +2,8 @@
 
 オフィス管理用デバイスのGUI。各機能の簡易版を実装し、動作検証をする。
 
+<< 本ドキュメントは作成中 >>
+
 ---
 
 ## 🎯 検証目的（PoCの目的）
@@ -22,7 +24,7 @@
 * **使用パーツ/センサー:** 
 
 ### 開発環境・主要ライブラリ
-* **Python:** `3.10.x`
+* **Python:** `3.13.5`
 * **主要ライブラリ:**
 
 ---
@@ -41,6 +43,17 @@
 # リポジトリのクローン
 git clone [https://github.com/](https://github.com/)[ユーザー名]/[リポジトリ名].git
 cd [リポジトリ名]
+
+# システムパッケージ（Picamera2等）のインストール
+sudo apt update
+sudo apt install -y python3-opencv
+sudo apt install -y python3-customtkinter
+sudo apt install -y python3-picamera2
+sudo apt install -y python3-pil
+sudo apt install -y python3-pil.imagetk
+
+sudo apt install -y fonts-noto-color-emoji #絵文字
+fc-cache -fv
 
 # 仮想環境の作成とライブラリインストール
 python3 -m venv .venv
