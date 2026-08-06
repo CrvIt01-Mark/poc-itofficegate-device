@@ -1,78 +1,94 @@
-# camera_manager.py
 import platform
-import time
 import cv2
 import numpy as np
-from PIL import Image
+
+# ラズパイ環境での Picamera2 読み込み試行
+try:
+    from picamera2 import Picamera2
+    HAS_PICAMERA2 = True
+except ImportError:
+    HAS_PICAMERA2 = False
+
 
 class CameraManager:
-    def __init__(self, camera_index=0):
-        self.camera_index = camera_index
-        self.cap = None
+    """Picamera2 対応のカメラ管理クラス"""
+    def __init__(self, width=640, height=480, flip_vertical=False):
+        self.width = width
+        self.height = height
+        self.flip_vertical = flip_vertical  # カメラが上下逆さに設置されている場合用
         self.is_dummy = False
         
-        # WSL 環境または Linux/Windows 等でカメラが開けない場合はダミーモードへ
-        self._init_camera()
-
-    def _init_camera(self):
-        """カメラの初期化（失敗した場合はダミーモードに移行）"""
-        # WSL 環境チェック (proc/version から microsoft 検出)
-        is_wsl = "microsoft" in platform.release().lower()
-
-        if is_wsl:
-            print("[Camera] WSL環境を検出しました ➔ ダミー映像モードで動作します")
-            self.is_dummy = True
-            return
-
-        # 本番環境（ラズパイ等）でカメラオープンを試行
-        self.cap = cv2.VideoCapture(self.camera_index)
-        if not self.cap.isOpened():
-            print("[Camera] カメラのオープンに失敗しました ➔ ダミー映像モードに切り替えます")
+        # WSL または Picamera2 がない PC 環境などの判定
+        system_name = platform.system()
+        release_name = platform.release()
+        
+        if "microsoft" in release_name.lower() or not HAS_PICAMERA2:
+            print("INFO: PC/WSL環境またはPicamera2未検出のため、ダミーカメラモードで起動します。")
             self.is_dummy = True
         else:
-            print("[Camera] カメラを正常にオープンしました")
+            try:
+                # Picamera2 の初期化
+                self.picam2 = Picamera2()
+                
+                # 解像度とフォーマットの設定（main={"size": (W, H)}）
+                config = self.picam2.create_preview_configuration(
+                    main={"size": (self.width, self.height), "format": "RGB888"}
+                )
+                self.picam2.configure(config)
+                self.picam2.start()
+                print("SUCCESS: Picamera2 を正常に起動しました。")
+            except Exception as e:
+                print(f"WARNING: Picamera2 の初期化に失敗したため、ダミーモードへ切り替えます: {e}")
+                self.is_dummy = True
 
-    def get_frame(self, width=640, height=480):
-        """1フレーム取得し、PillowのImageオブジェクト(RGB)として返す"""
+    def get_frame(self):
+        """
+        フレームを取得して (ret, frame_bgr) を返す
+        ※ GUI 側（OpenCV/Pillow）で扱いやすいよう BGR フォーマットで統一して返します
+        """
         if self.is_dummy:
-            return self._generate_dummy_frame(width, height)
+            return True, self._generate_dummy_frame()
 
-        ret, frame = self.cap.read()
-        if not ret or frame is None:
-            return self._generate_dummy_frame(width, height)
+        try:
+            # Picamera2 から NumPy 配列（RGB）でキャプチャ
+            frame_rgb = self.picam2.capture_array()
+            
+            # カメラが上下反転している場合の処理（必要に応じて）
+            if self.flip_vertical:
+                frame_rgb = cv2.flip(frame_rgb, 0)
 
-        # OpenCV(BGR) から Pillow(RGB) へ変換し、サイズ調整
-        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        frame_resized = cv2.resize(frame_rgb, (width, height))
-        return Image.fromarray(frame_resized)
+            return True, frame_rgb
+        except Exception as e:
+            print(f"ERROR: フレーム取得失敗: {e}")
+            return False, None
 
-    def _generate_dummy_frame(self, width, height):
-        """WSL開発用: 動くカラーバーと時計を描画したダミー画像を生成"""
-        # 背景（ダークグレー）
-        img = np.zeros((height, width, 3), dtype=np.uint8)
-        img[:] = (30, 30, 35)
-
+    def _generate_dummy_frame(self):
+        """開発用ダミーフレームの生成"""
+        import time
+        img = np.zeros((self.height, self.width, 3), dtype=np.uint8)
+        
+        # 背景（グラデーション）
+        img[:, :] = (40, 40, 40)
+        
         # 動く円アニメーション
         t = time.time()
-        cx = int((width / 2) + np.sin(t * 2) * (width / 4))
-        cy = int(height / 2)
-        cv2.circle(img, (cx, cy), 40, (0, 200, 255), -1)
-
-        # テキスト追加
+        cx = int((self.width / 2) + np.sin(t * 2) * (self.width / 4))
+        cy = int(self.height / 2)
+        cv2.circle(img, (cx, cy), 40, (0, 255, 128), -1)
+        
+        # テキスト描画
         cv2.putText(
-            img, "DUMMY CAMERA STREAM (WSL)", (20, 40),
-            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (250, 250, 250), 2
+            img, "DUMMY CAMERA (Picamera2 Mode)", (20, 40),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2
         )
-        time_str = time.strftime("%H:%M:%S")
-        cv2.putText(
-            img, f"Time: {time_str}", (20, height - 20),
-            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (180, 180, 180), 1
-        )
-
-        return Image.fromarray(img)
+        return img
 
     def release(self):
         """カメラリソースの解放"""
-        if self.cap and self.cap.isOpened():
-            self.cap.release()
-            print("[Camera] カメラリソースを解放しました")
+        if not self.is_dummy and hasattr(self, 'picam2'):
+            try:
+                self.picam2.stop()
+                self.picam2.close()
+                print("Picamera2 を正常に停止しました。")
+            except Exception as e:
+                print(f"Picamera2 停止時のエラー: {e}")
